@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>文章から傾向を振り返る | LLM-JP</title>
+<style>
+:root{font-family:system-ui,sans-serif;background:#f3f6f3;color:#19362f;line-height:1.7}*{box-sizing:border-box}body{margin:0}main{max-width:900px;margin:32px auto;padding:0 20px}h1{font-size:28px}h2{font-size:21px}h3{font-size:18px}a{color:#246e5b}.card{background:white;border:1px solid #d3e0d8;border-radius:12px;padding:22px;margin:18px 0}.notice{background:#e6efe8;padding:16px;border-radius:8px}label{display:block;margin:12px 0 5px;font-weight:600}input,textarea,button{font:inherit}input,textarea{width:100%;padding:10px;border:1px solid #aabdac;border-radius:6px}textarea{resize:vertical}button{border:0;border-radius:8px;padding:10px 18px;background:#246e5b;color:white;cursor:pointer;margin:5px}.secondary{background:#e0e8e2;color:#19362f}button:disabled{opacity:.5;cursor:not-allowed}.status{white-space:pre-wrap;min-height:26px}.muted{font-size:14px;color:#52665f}.badge{background:#e6efe8;padding:4px 10px;border-radius:6px;font-weight:600}blockquote{white-space:pre-wrap;overflow-wrap:anywhere;border-left:3px solid #638b79;padding:8px 14px;background:#f5f8f4;margin:10px 0}button:focus-visible,input:focus-visible,textarea:focus-visible,a:focus-visible{outline:3px solid #b78330;outline-offset:3px}[hidden]{display:none!important}.tablewrap{overflow-x:auto}table{border-collapse:collapse;white-space:nowrap;width:100%}td,th{padding:8px;text-align:left;border-bottom:1px solid #d3e0d8}.category-key{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin:16px 0}.category-key>div{border:1px solid #cbd6cf;border-radius:8px;padding:12px;background:#f8faf8}.category-symbol{font-size:22px;font-weight:700;margin-right:8px}.category-label{font-weight:650}#detailText{white-space:pre-wrap;overflow-wrap:anywhere;background:#f5f8f4;padding:14px;border-radius:6px}.category-key p{margin:6px 0;font-size:13px}select{font:inherit;padding:8px;border-radius:6px} @media print{#auth,#entry,nav,button{display:none}.card{break-inside:avoid}body{background:white}}
+
+/* Writing observation report: categorical pairs, never numeric personality scores. */
+#result{margin:34px 0}#resultTitle{font-size:28px;letter-spacing:-.02em;margin-bottom:8px}
+.result-overview{background:linear-gradient(125deg,#173f37,#286856);color:#fff;padding:26px;border-radius:18px;margin:20px 0}
+.result-overview .report-kicker{font-size:11px;letter-spacing:.16em;font-weight:700;color:#bce0cd;margin:0 0 10px}
+.result-overview h3{font-size:23px;margin:0 0 8px}.result-overview p{margin:6px 0;color:#e0eee7}
+.report-metrics{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}.report-metric{background:#ffffff12;border:1px solid #ffffff35;border-radius:10px;padding:10px 14px}
+.report-metric strong{font-size:25px;margin-right:8px}.report-metric span{font-size:12px}
+#cards,#detailAnalysis{display:grid;grid-template-columns:1fr;gap:16px}
+.observation-card{background:#fff;border:1px solid #dce5df;border-radius:16px;padding:24px;box-shadow:0 4px 18px #19362f06;min-width:0}
+.observation-card .observation-top{display:flex;justify-content:space-between;gap:14px;align-items:flex-start;flex-wrap:wrap}
+.observation-kicker{font-size:11px;letter-spacing:.1em;font-weight:700;color:#60786e;margin:0 0 4px}
+.observation-card h3{font-size:20px;margin:0 0 12px}.observation-card .category-label{font-size:12px}.observation-card .category-symbol{font-size:17px}
+.trait-pair{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:14px 0}
+.pair-option{display:flex;gap:12px;align-items:center;border:1px solid #e0e6e2;border-radius:11px;background:#f6f8f6;padding:13px;color:#52675d;min-width:0}
+.pair-letter{font-weight:750;font-size:27px;line-height:1.2;flex:none}.pair-wording{font-size:13px;line-height:1.55}
+.pair-option[data-selected="true"]{background:#e7f3ed;border:2px solid #28735a;padding:12px;color:#174c38}
+.observation-card[data-state="混在"] .pair-option[data-selected="true"]{background:#f2edf8;border-color:#7950a3;border-style:dashed;color:#583479}
+.observation-card[data-state="判定困難"]{background:#fafbf9}.pair-verdict{font-weight:650;font-size:14px;margin:12px 0}
+.observation-explanation{font-size:14px;line-height:1.85;overflow-wrap:anywhere}
+.quote-details{border-top:1px solid #e5ebe7;padding-top:13px;margin-top:16px}.quote-details summary{cursor:pointer;font-size:13px;font-weight:650;color:#246e5b}
+.quote-details blockquote{font-size:14px;margin:12px 0 4px}.observation-limit{font-size:12px;line-height:1.7;color:#5a7066;border-radius:8px;background:#f2f5f2;padding:11px;margin-bottom:0;overflow-wrap:anywhere}
+@media(min-width:850px){#cards,#detailAnalysis{grid-template-columns:1fr 1fr}.observation-card:last-child{grid-column:1/-1}.observation-card:last-child .trait-pair{max-width:620px}}
+@media(max-width:480px){.result-overview{padding:20px}.observation-card{padding:18px}.trait-pair{gap:7px}.pair-option{padding:10px;gap:8px}.pair-option[data-selected="true"]{padding:9px}.pair-letter{font-size:23px}.pair-wording{font-size:12px}}
+@media print{#cards,#detailAnalysis{display:block}.observation-card{break-inside:avoid;box-shadow:none;margin:14px 0}.result-overview{background:#fff;color:#19362f;border:2px solid #19362f}.result-overview p,.result-overview .report-kicker{color:#19362f}.report-metric{border:1px solid #60786e}}
+
+</style></head><body><main>
+<nav><a href="/llmjp">LLM-JP</a> · <a href="/llmjp/personality">質問式（20問）</a></nav>
+<h1>文章から傾向を振り返る</h1>
+<p>自分で書いた日記や経験の振り返りから、5つの観点に関連する表現を確認します。</p>
+<div class="notice">分析するのは文章に書かれた表現です。本人の性格や心理状態を確定する測定ではありません。言及がない観点は「判定困難」とします。質問式の得点とは比較できません。</div>
+<section class="card" id="auth"><h2>1. ログイン</h2><form id="loginForm"><label for="username">ユーザー名</label><input id="username" autocomplete="username" required><label for="password">パスワード</label><input id="password" type="password" autocomplete="current-password" required><button id="loginBtn">ログイン</button><button type="button" id="logout" class="secondary">ログアウト・画面を消去</button></form><p id="authStatus" class="status" role="status">ログインしてください。</p></section>
+<section class="card" id="entry"><h2>2. 自分で書いた文章</h2>
+<p class="muted">最近の出来事や、その時に考えたこと・取った行動を書いてください。100〜8,000文字。個人名など不要な情報は省いてください。</p>
+<label for="text">本文</label><textarea id="text" rows="12" maxlength="8000" placeholder="例：最近、誰かと協力した経験、予定どおりに進まなかったこと、新しく試したこと。その時どう考え、何をしましたか。"></textarea><span id="count" class="muted">0 / 8,000文字</span>
+<label for="maxTokens">生成トークン上限</label><input id="maxTokens" type="number" min="512" max="40960" value="4096"><p class="muted">ユーザー別のAPI上限が適用されます。</p>
+<p class="muted">「分析する」で本文をこのサーバーのLLMに送信します。この専用APIは本文を利用ログへ保存しません。「DBに保存」を押した場合のみ、本文・分析結果・ユーザー名・日時・モデル名を文章版専用テーブルに保存します。画面消去はDBデータの削除ではありません。</p>
+<button id="analyze" disabled>分析する</button><button id="clear" class="secondary">本文・結果・履歴表示を消去</button><p id="status" class="status" role="status" aria-live="polite"></p><details id="analysisDebug" hidden><summary>応答の確認（未検証）</summary><p class="muted">失敗原因の確認用です。以下は検証済みの分析結果ではありません。本文に関する情報を含む場合があります。必要な箇所だけを確認してください。思考過程は表示しません。</p><pre id="analysisDebugText" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre></details></section>
+<section id="result" hidden aria-labelledby="resultTitle"><h2 id="resultTitle">この文章に表れた傾向</h2><p class="muted">引用の一致は、AIの解釈が正しいことまで保証するものではありません。本文の文脈と併せて確認してください。DBへの保存は分析後30分以内に行ってください。</p><div id="resultOverview"></div><div id="cards"></div><p id="model" class="muted"></p><button id="save" disabled>DBに保存</button><button id="exportCsv">結果をCSVで保存</button><button id="print">印刷 / PDF保存</button><p id="saveStatus" class="status" role="status"></p></section>
+<section class="card"><h2>文章版のトレンド・保存履歴</h2><p class="muted">同じ分析バージョンの本人の最新100件までを、保存日時順に表示します。色は表現の分類で、良し悪しや強さを示しません。文章の内容・長さ・モデルによって結果が変わるため、性格の改善・悪化を示す推移ではありません。</p><form id="historySearch"><label for="historyQuery">自分の保存記録を検索</label><input id="historyQuery" maxlength="100" placeholder="本文・分析結果に含まれる言葉（例：会議、計画）"><p class="muted">検索対象は自分の保存した本文と分析結果です。空欄なら期間内の全件を対象にします。</p><label for="historyDays">表示期間</label><select id="historyDays"><option value="30">過去30日</option><option value="90" selected>過去90日</option><option value="365">過去1年</option><option value="0">全期間</option></select><button id="refresh" type="submit" disabled>検索 / 履歴を更新</button></form><div id="categoryKey" class="category-key" aria-label="分類の凡例"></div><p id="historyStatus" class="status" role="status">ログインすると確認できます。</p><button id="historyCsv" type="button">表示中の履歴をCSVで保存</button><button id="historyPdf" type="button">表示中の履歴をPDF保存</button><p class="muted">PDFは印刷画面で「PDFに保存」を選びます。履歴の出力は検索結果の表示中の最新100件までです。</p><div id="timeline" class="tablewrap"></div><div id="history" class="tablewrap"></div><section id="detail" hidden aria-labelledby="detailTitle"><h3 id="detailTitle">保存した内容</h3><button id="closeDetail" type="button" class="secondary">詳細表示を閉じる</button><p id="detailMeta"></p><h4>保存した本文</h4><div id="detailText"></div><h4>分析結果</h4><div id="detailAnalysis"></div></section><p id="detailStatus" class="status" role="status"></p></section>
+</main><script>
+"use strict";
+const $=id=>document.getElementById(id);
+const labels={E:"人との交流に関連する表現（外向性）",A:"配慮・協力に関連する表現（協調性）",C:"計画・遂行に関連する表現（誠実性）",S:"落ち着いた対処に関連する表現（情緒の安定性）",O:"新しい発想・経験に関連する表現"};
+let token="",epoch=0,busy=false,current=null,historyEpoch=0,controller=null;
+function controls(){$("analyze").disabled=!token||busy;$("save").disabled=!token||!current||busy;$("refresh").disabled=!token||busy;$("text").readOnly=busy;$("loginBtn").disabled=busy;}
+function clearHistory(){historyEpoch++;clearDetail();$("timeline").replaceChildren();$("history").replaceChildren();$("historyStatus").textContent=token?"「履歴を更新」で確認できます。":"ログインすると確認できます。";}
+function clearResult(){epoch++;$("analysisDebug").hidden=true;$("analysisDebug").open=false;$("analysisDebugText").textContent="";if(controller)controller.abort();controller=null;busy=false;current=null;$("result").hidden=true;$("cards").replaceChildren();$("resultOverview").replaceChildren();$("model").textContent="";$("saveStatus").textContent="";$("status").textContent="";controls();}
+function clearAll(){clearResult();$("text").value="";$("count").textContent="0 / 8,000文字";clearHistory();$("historyQuery").value="";}
+async function request(url,body,auth=token,signal){
+ const response=await fetch(url,{method:body===undefined?"GET":"POST",headers:{...(body===undefined?{}:{"Content-Type":"application/json"}),...(auth?{Authorization:"Bearer "+auth}:{})},...(body===undefined?{}:{body:JSON.stringify(body)}),signal,cache:"no-store"});
+ if(response.status===401&&auth===token){token="";clearAll();$("authStatus").textContent="再ログインしてください。";}
+ let data;try{data=await response.json();}catch{throw new Error("応答を読み取れませんでした。");}
+ if(!response.ok){
+  const detail=data.detail,error=new Error(typeof detail==="string"?detail:detail?.message||"APIエラー ("+response.status+")");
+  error.diagnostics=detail&&typeof detail==="object"?detail.diagnostics:null;throw error;
+ }
+ return data;
+}
+const pairDefinitions=[
+ {id:"E",title:"外向性に関連する表現",left:"A",leftText:"積極的・主体的に関わる",right:"B",rightText:"控えめ・静かに関わる",positive:"A"},
+ {id:"S",title:"落ち着いた対処に関連する表現",left:"C",leftText:"心配・動揺が表れている",right:"D",rightText:"落ち着いて対処している",positive:"D"},
+ {id:"O",title:"新しい経験への関心",left:"H",leftText:"新しい経験・挑戦に関心",right:"I",rightText:"慣れた方法・安定を好む",positive:"H"},
+ {id:"A",title:"配慮・協力に関連する表現",left:"J",leftText:"不満・対立が表れている",right:"K",rightText:"配慮・協力が表れている",positive:"K"},
+ {id:"C",title:"計画・自己管理に関連する表現",left:"L",leftText:"計画・自己管理を重視",right:"M",rightText:"準備不足・不注意の記述",positive:"L"}
+];
+function observationCard(item,index){
+ const pair=pairDefinitions.find(p=>p.id===item.id);
+ const card=document.createElement("article");card.className="observation-card";card.dataset.state=item.tendency;card.setAttribute("aria-label",pair.title);
+ const top=document.createElement("div"),headingWrap=document.createElement("div"),kicker=document.createElement("p"),heading=document.createElement("h3");
+ top.className="observation-top";kicker.className="observation-kicker";kicker.textContent=String(index+1).padStart(2,"0")+" / "+pair.left+" · "+pair.right;
+ heading.textContent=pair.title;headingWrap.append(kicker,heading);top.append(headingWrap,categoryBadge(item.tendency));card.append(top);
+ const selected=item.tendency==="表現あり"?pair.positive:item.tendency==="反対方向の表現あり"?(pair.positive===pair.left?pair.right:pair.left):null;
+ const options=document.createElement("div");options.className="trait-pair";
+ for(const [letter,wording] of [[pair.left,pair.leftText],[pair.right,pair.rightText]]){
+  const option=document.createElement("div"),code=document.createElement("span"),label=document.createElement("span");
+  option.className="pair-option";option.dataset.selected=String(item.tendency==="混在"||letter===selected);
+  code.className="pair-letter";code.textContent=letter;label.className="pair-wording";label.textContent=wording;option.append(code,label);options.append(option);
+ }
+ const verdict=document.createElement("p");verdict.className="pair-verdict";
+ verdict.textContent=selected?"この文章には「"+selected+"側」の表現があります。":item.tendency==="混在"?"両方向の表現が含まれています。":"この文章だけでは判断材料が足りません。";
+ const explanation=document.createElement("p");explanation.className="observation-explanation";explanation.textContent=item.explanation;card.append(options,verdict,explanation);
+ if(item.evidence.length){
+  const details=document.createElement("details"),summary=document.createElement("summary");details.className="quote-details";summary.textContent="本文の引用を確認（"+item.evidence.length+"件）";details.append(summary);
+  for(const quote of item.evidence){const block=document.createElement("blockquote");block.textContent=quote;details.append(block);}card.append(details);
+ }
+ const limit=document.createElement("p");limit.className="observation-limit";limit.textContent="確認できない点："+item.uncertainty;card.append(limit);return card;
+}
+function display(data,text){
+ if(!data.analysis||!Array.isArray(data.analysis.observations)||data.analysis.observations.length!==5)throw new Error("分析結果の形式を確認できませんでした。");
+ const ids=new Set();
+ for(const item of data.analysis.observations){
+  if(!Object.hasOwn(labels,item.id)||ids.has(item.id)||!["表現あり","反対方向の表現あり","混在","判定困難"].includes(item.tendency)||!Array.isArray(item.evidence)||item.evidence.some(q=>typeof q!=="string"||!text.includes(q)))throw new Error("分析結果の根拠を確認できませんでした。");
+  ids.add(item.id);
+ }
+ const items=Object.fromEntries(data.analysis.observations.map(item=>[item.id,item]));
+ $("cards").replaceChildren();pairDefinitions.forEach((pair,index)=>$("cards").append(observationCard(items[pair.id],index)));
+ const overview=document.createElement("div"),kicker=document.createElement("p"),title=document.createElement("h3"),description=document.createElement("p"),metrics=document.createElement("div");
+ overview.className="result-overview";kicker.className="report-kicker";kicker.textContent="YOUR WRITING / REFLECTION REPORT";
+ title.textContent="文章に表れた5つの傾向";description.textContent="A/Bなどの表示は、この文章内の行動・経験の分類です。あなたの性格や能力を確定するものではありません。";
+ metrics.className="report-metrics";
+ const quoted=data.analysis.observations.filter(item=>item.evidence.length>0).length,unknown=data.analysis.observations.filter(item=>item.tendency==="判定困難").length;
+ for(const [number,label] of [[5,"観点"],[quoted,"引用付き"],[unknown,"判定保留"]]){
+  const metric=document.createElement("div"),value=document.createElement("strong"),caption=document.createElement("span");metric.className="report-metric";value.textContent=number;caption.textContent=label;metric.append(value,caption);metrics.append(metric);
+ }
+ overview.append(kicker,title,description,metrics);$("resultOverview").replaceChildren(overview);
+ $("model").textContent="分析モデル："+data.model_name+" / "+data.analysis_version;$("result").hidden=false;
+}
+
+$("loginForm").addEventListener("submit",async event=>{
+ event.preventDefault();token="";clearResult();clearHistory();busy=true;controls();const version=epoch;
+ try{
+  const data=await request("/llmjp/auth/login",{username:$("username").value.trim(),password:$("password").value},"");
+  if(version!==epoch)return;if(!data.access_token)throw new Error("ログインに失敗しました。");
+  token=data.access_token;$("password").value="";$("authStatus").textContent="ログイン済み";loadHistory();
+ }catch(error){if(version===epoch)$("authStatus").textContent=error.message;}
+ finally{if(version===epoch){busy=false;controls();}}
+});
+$("logout").addEventListener("click",()=>{token="";clearAll();$("password").value="";$("authStatus").textContent="ログアウトしました。保存済みのDBデータは残ります。";});
+$("clear").addEventListener("click",clearAll);
+$("text").addEventListener("input",()=>{clearResult();$("count").textContent=$("text").value.length+" / 8,000文字";});
+$("analyze").addEventListener("click",async()=>{
+ if(!token||busy)return;const text=$("text").value,max=Number($("maxTokens").value);
+ if(text.trim().length<100||text.length>8000){$("status").textContent="本文を100〜8,000文字で入力してください。";return;}
+ if(!Number.isInteger(max)||max<512||max>40960){$("status").textContent="生成上限を512〜40960の整数にしてください。";return;}
+ clearResult();const version=epoch,auth=token;busy=true;controller=new AbortController();controls();$("status").textContent="文章を分析中…";
+ try{
+  const data=await request("/llmjp/personality/text/analyze",{text,max_tokens:max},auth,controller.signal);
+  if(version!==epoch||auth!==token)return;display(data,text);current={text,analysis:data.analysis,save_token:data.save_token};$("status").textContent="分析が完了しました。根拠と文脈を確認してください。";
+ }catch(error){if(version===epoch&&error.name!=="AbortError"){
+  $("status").textContent=error.message;
+  if(error.diagnostics){
+   const d=error.diagnostics;
+   $("analysisDebugText").textContent="原因コード: "+d.code+"\n生成トークン数: "+(d.output_tokens??"不明")+" / 上限 "+d.max_tokens+"\n\n未検証の最終回答"+(d.preview_truncated?"（先頭12,000文字）":"")+":\n"+(d.final_answer||"（最終回答なし）");
+   $("analysisDebug").hidden=false;
+  }
+ }}
+ finally{if(version===epoch){busy=false;controller=null;controls();}}
+});
+$("save").addEventListener("click",async()=>{
+ if(!token||!current||busy)return;const version=epoch,auth=token;busy=true;controls();$("saveStatus").textContent="保存中…";
+ try{
+  const data=await request("/llmjp/personality/text/results",current,auth);
+  if(version!==epoch||auth!==token)return;$("saveStatus").textContent="保存しました。ID: "+data.id+" / "+new Date(data.created_at).toLocaleString("ja-JP");loadHistory();
+ }catch(error){if(version===epoch)$("saveStatus").textContent=error.message;}
+ finally{if(version===epoch){busy=false;controls();}}
+});
+const categories={"表現あり":"#0057b8","反対方向の表現あり":"#aa4a00","混在":"#6f3ca0","判定困難":"#46515a"};
+const symbols={"表現あり":"●","反対方向の表現あり":"▲","混在":"■","判定困難":"◆"};
+const categoryDescriptions={"表現あり":"この観点に関連する行動・経験の表現があります。","反対方向の表現あり":"この観点と反対方向の行動・経験の表現があります。言及がない場合とは異なります。","混在":"両方向の表現が含まれます。","判定困難":"材料が不足している、または根拠の引用を確認できません。"};
+function categoryBadge(category){
+ const span=document.createElement("span");span.className="category-label";
+ const symbol=document.createElement("span");symbol.className="category-symbol";symbol.style.color=categories[category];symbol.setAttribute("aria-hidden","true");symbol.textContent=symbols[category];
+ const text=document.createElement("span");text.textContent=category;span.append(symbol,text);return span;
+}
+for(const category of Object.keys(categories)){
+ const key=document.createElement("div"),description=document.createElement("p");
+ description.textContent=categoryDescriptions[category];key.append(categoryBadge(category),description);$("categoryKey").append(key);
+}
+function validateHistory(data){
+ if(data.analysis_version!=="ktl-writing-observations-v1"||!Array.isArray(data.records)||data.records.length>100||!Number.isInteger(data.total)||data.total<data.records.length)throw new Error("履歴の形式を確認できませんでした。");
+ let previous=-Infinity;
+ for(const row of data.records){
+  const time=Date.parse(row.created_at),items=row.analysis?.observations;
+  if(!Number.isFinite(time)||time<previous||!Array.isArray(items)||items.length!==5||new Set(items.map(x=>x.id)).size!==5||items.some(x=>!labels[x.id]||!categories[x.tendency]))throw new Error("履歴の形式を確認できませんでした。");
+  previous=time;
+ }return data;
+}
+function drawTimeline(rows){
+ $("timeline").replaceChildren();if(!rows.length)return;
+ const ns="http://www.w3.org/2000/svg";
+ function node(tag,attrs,text){
+  const el=document.createElementNS(ns,tag);for(const [k,v] of Object.entries(attrs))el.setAttribute(k,String(v));
+  if(text!==undefined)el.textContent=text;return el;
+ }
+ const svg=node("svg",{viewBox:"0 0 900 340",width:"100%",role:"img","aria-label":"文章版5観点の分類タイムライン。横軸は保存日時。分類の詳細は下の履歴表で確認できます。"});
+ svg.style.minWidth="760px";
+ const names={E:"交流に関連する表現",A:"配慮・協力に関連する表現",C:"計画・遂行に関連する表現",S:"落ち着いた対処に関連する表現",O:"新しい発想・経験に関連する表現"};
+ function marker(category,x,y,r){
+  const attrs={fill:categories[category],stroke:"#18292a","stroke-width":1};
+  if(category==="表現あり")return node("circle",{...attrs,cx:x,cy:y,r});
+  if(category==="混在")return node("rect",{...attrs,x:x-r,y:y-r,width:2*r,height:2*r});
+  const points=category==="反対方向の表現あり"?[[x,y-r],[x+r,y+r],[x-r,y+r]]:[[x,y-r],[x+r,y],[x,y+r],[x-r,y]];
+  return node("polygon",{...attrs,points:points.map(p=>p.join(",")).join(" ")});
+ }
+ Object.keys(categories).forEach((category,i)=>{
+  svg.append(marker(category,20+i*220,25,6),node("text",{x:32+i*220,y:30,"font-size":13,fill:"#19362f"},category));
+ });
+ const start=Date.parse(rows[0].created_at),end=Date.parse(rows[rows.length-1].created_at);
+ Object.keys(labels).forEach((key,i)=>{
+  const y=75+i*46;
+  svg.append(node("text",{x:12,y:y+5,"font-size":13,fill:"#19362f"},names[key]),node("line",{x1:240,x2:870,y1:y,y2:y,stroke:"#d3e0d8"}));
+  rows.forEach(row=>{
+   const category=row.analysis.observations.find(item=>item.id===key).tendency;
+   const x=end===start?555:240+(Date.parse(row.created_at)-start)/(end-start)*630;
+   const dot=marker(category,x,y,7);
+   dot.append(node("title",{},new Date(row.created_at).toLocaleString("ja-JP")+" / "+names[key]+" / "+category+" / "+row.model_name));svg.append(dot);
+  });
+ });
+ svg.append(node("text",{x:240,y:310,"font-size":12,fill:"#52665f"},new Date(rows[0].created_at).toLocaleString("ja-JP")));
+ if(rows.length>1)svg.append(node("text",{x:870,y:330,"text-anchor":"end","font-size":12,fill:"#52665f"},new Date(rows[rows.length-1].created_at).toLocaleString("ja-JP")));
+ $("timeline").append(svg);
+}
+async function loadHistory(){
+ if(!token)return;const version=++historyEpoch,auth=token;clearDetail();$("timeline").replaceChildren();$("history").replaceChildren();$("historyStatus").textContent="履歴を取得中…";
+ try{
+  const data=await request("/llmjp/personality/text/results?days="+encodeURIComponent($("historyDays").value)+"&q="+encodeURIComponent($("historyQuery").value.trim()),undefined,auth);
+  if(version!==historyEpoch||auth!==token)return;
+  validateHistory(data);
+  $("historyStatus").textContent=data.records.length?data.records.length+"件を表示（期間・キーワードの検索結果）"+(data.total>data.records.length?"（対象"+data.total+"件のうち最新100件）":"")+(data.records.length===1?"。比較には2件以上の保存が必要です。":""):"この検索条件に一致する保存記録はありません。";
+  drawTimeline(data.records);
+  const table=document.createElement("table"),head=document.createElement("thead"),tr=document.createElement("tr"),body=document.createElement("tbody");
+  for(const value of ["保存日時",...Object.values(labels),"保存内容"]){const th=document.createElement("th");th.scope="col";th.textContent=value;tr.append(th);}head.append(tr);table.append(head);
+  for(const row of data.records){
+   const line=document.createElement("tr"),byId=Object.fromEntries(row.analysis.observations.map(x=>[x.id,x.tendency]));
+   for(const value of [new Date(row.created_at).toLocaleString("ja-JP"),...Object.keys(labels).map(key=>byId[key]||"判定困難")]){const td=document.createElement("td");if(Object.hasOwn(categories,value))td.append(categoryBadge(value));else td.textContent=value;line.append(td);}const cell=document.createElement("td"),button=document.createElement("button");button.type="button";button.textContent="詳細を見る";button.addEventListener("click",()=>loadDetail(row.id));cell.append(button);line.append(cell);body.append(line);
+  }table.append(body);$("history").append(table);
+ }catch(error){if(version===historyEpoch)$("historyStatus").textContent=error.message;}
+}
+$("historySearch").addEventListener("submit",event=>{event.preventDefault();loadHistory();});$("historyDays").addEventListener("change",loadHistory);
+function writingExport(history=false,pdf=false){
+ if(history){
+ const table=$("history").querySelector("table");if(!table||!table.querySelector("tbody tr"))return;
+ const headers=[...table.querySelectorAll("thead th")].slice(0,-1).map(x=>x.textContent);
+ const rows=[...table.querySelectorAll("tbody tr")].map(tr=>[...tr.children].slice(0,-1).map(x=>x.textContent));
+ if(pdf)printReport("文章分析・保存履歴",headers,rows,[$("historyStatus").textContent],["timeline"]);
+ else downloadCsv("writing-history.csv",headers,rows);
+ }else{
+ if(!current||$("result").hidden)return;
+ const headers=["観点","分類","説明","本文の引用","確認できない点"];
+ const rows=pairDefinitions.map(p=>{const item=current.analysis.observations.find(x=>x.id===p.id);return [p.title,item.tendency,item.explanation,item.evidence.join("\n"),item.uncertainty];});
+ if(pdf)printReport("文章分析・今回の結果",headers,rows,["出力日時："+new Date().toLocaleString("ja-JP"),$("model").textContent]);
+ else downloadCsv("writing-result.csv",headers,rows);
+ }
+}
+$("exportCsv").addEventListener("click",()=>writingExport());
+$("print").addEventListener("click",()=>writingExport(false,true));
+$("historyCsv").addEventListener("click",()=>writingExport(true));
+$("historyPdf").addEventListener("click",()=>writingExport(true,true));
+
+window.addEventListener("pageshow",()=>{token="";clearAll();$("password").value="";$("authStatus").textContent="ログインしてください。";});
+
+let detailVersion=0;
+function clearDetail(){detailVersion++;$("detail").hidden=true;for(const id of ["detailMeta","detailText","detailAnalysis","detailStatus"])$(id).replaceChildren();}
+async function loadDetail(id){
+ if(!token)return;clearDetail();const version=detailVersion,historyVersion=historyEpoch,auth=token;
+ $("detailStatus").textContent="保存内容を取得中…";
+ try{
+  const data=await request("/llmjp/personality/text/results/"+encodeURIComponent(id),undefined,auth);
+  if(version!==detailVersion||historyVersion!==historyEpoch||auth!==token)return;
+  if(typeof data.text!=="string"||!Array.isArray(data.analysis?.observations))throw new Error("保存内容の形式を確認できませんでした。");
+  $("detailMeta").textContent="ID: "+data.id+" / "+new Date(data.created_at).toLocaleString("ja-JP")+" / "+data.model_name;
+  $("detailText").textContent=data.text;
+  for(const pair of pairDefinitions){
+   const item=data.analysis.observations.find(observation=>observation.id===pair.id);
+   if(!item)throw new Error("保存内容の形式を確認できませんでした。");
+   if(!Object.hasOwn(labels,item.id)||!Object.hasOwn(categories,item.tendency)||!Array.isArray(item.evidence))throw new Error("保存内容の形式を確認できませんでした。");
+   const index=pairDefinitions.findIndex(pair=>pair.id===item.id);
+   $("detailAnalysis").append(observationCard(item,index));
+  }
+  $("detail").hidden=false;$("detailStatus").textContent="";
+ }catch(error){if(version===detailVersion&&historyVersion===historyEpoch)$("detailStatus").textContent=error.message;}
+}
+$("closeDetail").addEventListener("click",clearDetail);
+
+
+function downloadCsv(filename,headers,rows){
+ if(!rows.length)return;
+ const cell=value=>{let s=String(value??"");if(/^[\s\uFEFF]*[=+@-]/u.test(s)||/^[\t\r\n]/u.test(s))s="'"+s;return '"'+s.replaceAll('"','""')+'"';};
+ const blob=new Blob(["\uFEFF"+[headers,...rows].map(row=>row.map(cell).join(",")).join("\r\n")],{type:"text/csv;charset=utf-8"});
+ const url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download=filename;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+function printReport(title,headers,rows,notes,graphIds=[]){
+ if(!rows.length)return;
+ const report=window.open("","_blank");
+ if(!report){alert("PDF保存用の画面を開けませんでした。ポップアップを許可してください。");return;}
+ const d=report.document;d.title=title;d.documentElement.lang="ja";
+ const style=d.createElement("style");style.textContent="body{font-family:system-ui,sans-serif;color:#19362f;padding:24px;line-height:1.6}table{border-collapse:collapse;width:100%;font-size:12px;table-layout:fixed}td,th{border:1px solid #aaa;padding:7px;text-align:left;white-space:pre-wrap;overflow-wrap:anywhere}thead{display:table-header-group}tr{break-inside:avoid}svg{max-width:100%;height:auto}p{white-space:pre-wrap;overflow-wrap:anywhere}@media print{button{display:none}body{padding:0}}@page{size:A4 landscape;margin:12mm}";
+ d.head.append(style);
+ const add=(tag,text,parent=d.body)=>{const el=d.createElement(tag);el.textContent=text;parent.append(el);return el;};
+ add("h1",title);for(const note of notes)add("p",note);
+ const table=add("table",""),head=add("thead","",table),hr=add("tr","",head),body=add("tbody","",table);
+ headers.forEach(x=>add("th",x,hr));rows.forEach(row=>{const tr=add("tr","",body);row.forEach(x=>add("td",String(x??""),tr));});
+ for(const id of graphIds){for(const svg of document.getElementById(id).querySelectorAll("svg"))d.body.append(d.importNode(svg,true));}
+ const button=add("button","印刷画面を開く → 保存先で「PDFに保存」を選択");button.type="button";button.onclick=()=>report.print();
+ add("p","自己理解の参考用です。性格の確定診断や採用・人事評価には使用できません。");
+ report.focus();report.print();
+}
+
+</script></body></html>
+
+
+
