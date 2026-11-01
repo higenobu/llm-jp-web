@@ -1,9 +1,8 @@
 #!/bin/sh
-# Run with sudo sh scripts/install-static.sh from this checkout.
 set -eu
 project_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-install -d -m 755 /var/www/llmjp-web
-for name in index.html classify.html personality.html personality-text.html; do
-    install -m 644 "$project_root/static/$name" "/var/www/llmjp-web/$name"
+install -d -m 755 /var/www/blood-test-review
+for name in index.html style.css core.js app.js; do
+    install -m 644 "$project_root/static/$name" "/var/www/blood-test-review/$name"
 done
-printf '%s\n' 'Installed four public HTML files. Apache configuration was not changed.'
+printf '%s\n' 'Installed public files. Apache configuration was not changed.'

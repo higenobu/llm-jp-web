@@ -1,48 +1,60 @@
-# LLM-JP Web
+# Blood Test Review — 初期版
 
-LLM-JPのブラウザ画面と、Amazon Linux 2023 / Apache向け配置設定です。
-移行先リポジトリ: `higenobu/llm-jp-web`。
+血液検査の測定値と、その検査票に記載された基準範囲を入力し、比較表・所見の下書き・CSV/PDFを作るWebアプリです。
+想定リポジトリ: `higenobu/blood-test-review`。公開先: `https://llm-jp.com/blood-test/`。
 
-## 画面
+## この版の機能
 
-- `/llmjp`: 文章生成、JSON/Markdown/PDF保存
-- `/llmjp/classify`: 文書の機密判定、PDFからの入力
-- `/llmjp/personality`: 20問の質問票、採点、保存・推移、CSV/PDF出力
-- `/llmjp/personality/text`: 文章分析、保存・検索・推移、CSV/PDF出力
+- 手入力、UTF-8 CSV入力（100項目・200KBまで）、CSVテンプレート、架空データ。
+- 範囲内／高値／低値／判定不可を、文字・記号・色で表示。
+- 上下限を含む・含まないを指定可能。片側範囲にも対応。
+- 単位の未入力・不一致、数値以外、欠損、矛盾する範囲は判定不可。
+- 総合所見の下書きは比較件数と、範囲外・判定不可の項目をプログラムで列挙。
+- 既存LLM-JP APIを使う任意のAI補助。匿名IDと比較区分だけを送信し、分類の全件一致を検証。AIは許可済みの定型確認項目を選択します。
+- 比較表をCSV、比較表と所見の下書きをブラウザの印刷画面からPDF保存。
 
-HTML/CSS/JavaScriptはEC2のApacheから配信し、AI処理・認証・データ保存は
-`https://api.kcg.edu/llmjp` の既存APIを利用します。Web用EC2にGPU・Dockerは不要です。
-画面とAPIはApacheのリバースプロキシで同一オリジンになります。
+AIによる自由記述の医学的総合判断、病名、治療、重症度・緊急性の推定は、この版にはありません。AI応答が不正な場合は表示せず、元の比較結果を保ちます。モデルによっては構造化出力に失敗するため、実モデルでの検証が必要です。
 
-## 更新済みEC2への移行
+## 基準範囲の扱い
 
-```bash
-git clone https://github.com/higenobu/llm-jp-web.git ~/llm-jp-web
-cd ~/llm-jp-web
-sudo sh scripts/install-static.sh
+医学的基準値の一覧は内蔵していません。検査施設の検査票から、本人の年齢・性別などの適用条件に合う範囲と単位を転記してください。入力の真偽・適用条件そのものはアプリでは確認できません。単位換算、定性検査、`<5`のような測定値は対象外で、判定不可とします。
+
+基準範囲との比較は健康状態の保証ではありません。範囲内でも疾患を否定できず、範囲外でも疾患を意味するとは限りません。所見は医療者確認前の参考資料です。個別に受けている医療者の指示を優先してください。
+
+設計上の参考: [MedlinePlus — How to Understand Your Lab Results](https://medlineplus.gov/lab-tests/how-to-understand-your-lab-results/)。検査施設ごとの基準範囲・単位を使い、検査結果だけで診断しない方針です。
+
+## データとAPI
+
+DB保存・履歴・ブラウザ永続保存はありません。ログイン用トークンは画面内のメモリだけで管理します。消去・ログアウト・再読み込みでデータとトークンを消去します。ダウンロード済みのCSV/PDFやブラウザの印刷履歴はPC側に残ります。
+
+数値比較と所見下書きはブラウザ内で実行し、ログイン不要です。AI補助にはログインと送信同意が必要です。送信先は同じドメインの `/llmjp/generate`（Apache経由で `api.kcg.edu`）。入力から送信するのは匿名IDと比較区分だけで、項目名・数値・単位・氏名を送りません。認証情報は `/llmjp/auth/login` へ送信します。
+
+既存APIには利用ログが残る可能性があります。アプリ側の非保存設定はAPI側のログ保存を停止しません。実データ利用前に管理者が `LOG_PROMPT_BODY`、`output_body`、プロキシ・監視基盤を含む記録方針を確認してください。デモは架空データで行ってください。
+
+## CSV形式
+
+```csv
+item,value,unit,lower,upper,reference_unit,lower_inclusive,upper_inclusive
+架空項目A,12,demo,3,10,demo,true,true
 ```
 
-このスクリプトは公開HTML4つだけを置き換えます。既に動いているApache設定は変更しません。
-ブラウザをCtrl+Shift+Rで更新してください。初回配置・設定の再現は
-[EC2手順](docs/ec2.md)を参照してください。
+- `lower`・`upper`: 少なくとも片方を入力。両方空欄は判定不可。
+- `lower_inclusive`・`upper_inclusive`: `true`（境界を含む）または`false`。空欄はtrue。
+- 数値の有効桁数は15桁まで。非有限値・桁あふれ・アンダーフローは判定不可。
+- `unit` と `reference_unit` は前後の空白を除いて完全一致が必要です。
+- 架空データの範囲を臨床の基準として使わないでください。
 
-## 開発とテスト
+## 開発・検証
 
 ```bash
 npm ci
 npm test
 ```
 
-Node.jsはテスト用です。配信中のEC2でNode.jsを常駐させる必要はありません。
-DOMテストにはモックを利用します。実際のAPI・DB・PDF印刷は別途確認してください。
+テストは数値比較・CSV・AI応答の検証と、モックAPIを使うDOMテストです。実際のAPI・医療的妥当性・PDFの改ページは検証していません。
 
-`tests/fixtures/questionnaires.json` はテスト専用の質問セットです。
-本番の質問セットはAPIが管理するため、Webリポジトリ側のfixture編集では変更されません。
+画面表示だけを試すには、プロジェクト直下で `python3 -m http.server 8080 --directory static` を実行して開けます。この方法では `/llmjp/` プロキシがないため、ログインとAI補助は動きません。
 
-## 出典
+## EC2への配置
 
-Web画面とテストは `higenobu/llm-jp` のコミット
-`54c552374d62e1b9a060fe3b8f3dcef015ffffcd`、Apacheルーティングは同リポジトリの
-`9041c956e767e1c145adc7438e3044bdc4a1d204` から分離しました。
-APIのPythonコード・モデル・DB・秘密設定・元リポジトリのGit履歴は移行対象に含めません。
-本番サーバー上で確認したHTTP振り分け、443番Listen、証明書更新フックを配置手順に追記しています。
+詳細は [配置手順](docs/deploy.md) を参照してください。既存のLLM-JP Webアプリと独立した公開ディレクトリを使います。
