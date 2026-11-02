@@ -1,48 +1,62 @@
-# LLM-JP Web
+# SOAP Note Assistant（初期デモ）
 
-LLM-JPのブラウザ画面と、Amazon Linux 2023 / Apache向け配置設定です。
-移行先リポジトリ: `higenobu/llm-jp-web`。
+診察中の医師・患者の会話を録音し、文字起こしを人が修正した後、SOAPカルテの下書きを作るアプリです。
+移行先: `higenobu/soap-note-assistant`。公開先: `https://llm-jp.com/soap/`。
 
-## 画面
+## 構成
 
-- `/llmjp`: 文章生成、JSON/Markdown/PDF保存
-- `/llmjp/classify`: 文書の機密判定、PDFからの入力
-- `/llmjp/personality`: 20問の質問票、採点、保存・推移、CSV/PDF出力
-- `/llmjp/personality/text`: 文章分析、保存・検索・推移、CSV/PDF出力
+| 場所 | 処理 |
+|---|---|
+| ブラウザ / 既存EC2 | 録音、原音再生、発話・話者修正、SOAP編集、コピー・PDF |
+| deepstationの独立Dockerサービス | faster-whisperによる日本語文字起こし |
+| 既存LLM-JP API | 確認済み会話のSOAP分類 |
 
-HTML/CSS/JavaScriptはEC2のApacheから配信し、AI処理・認証・データ保存は
-`https://api.kcg.edu/llmjp` の既存APIを利用します。Web用EC2にGPU・Dockerは不要です。
-画面とAPIはApacheのリバースプロキシで同一オリジンになります。
+deepstationはUbuntu 20.04、Docker 28.1.1、96論理CPU・約1TiB RAMの利用者提示環境を想定します。
+CPU/int8・8スレッド・同時1件の音声認識から始め、GPUやホストPython/CUDAは変更しません。
+既存LLMコンテナとは別Composeプロジェクトです。GPU高速化はこの初期版には含めません。
 
-## 更新済みEC2への移行
+## できること・範囲
 
-```bash
-git clone https://github.com/higenobu/llm-jp-web.git ~/llm-jp-web
-cd ~/llm-jp-web
-sudo sh scripts/install-static.sh
-```
+1. 録音対象者の同意を確認して録音開始・停止、または音声ファイルを選択。
+2. 音声認識への送信同意後、音声を日本語で文字起こし。
+3. 原音と照合して発話・話者（医師・患者・家族・不明）を修正。
+4. LLM-JPへの会話本文の送信に同意して、抽出型SOAP下書きを作成。
+5. 医師が編集・確認した後、コピーまたは印刷画面からPDF保存。
 
-このスクリプトは公開HTML4つだけを置き換えます。既に動いているApache設定は変更しません。
-ブラウザをCtrl+Shift+Rで更新してください。初回配置・設定の再現は
-[EC2手順](docs/ec2.md)を参照してください。
+**自動話者分離はありません。** 音声認識の各区間は話者「不明」で返します。発話に複数区分が混ざる場合は手動で分割します。
 
-## 開発とテスト
+**SOAPは抽出型**です。モデルは発話IDをS/O/A/P/要確認へ分類し、画面は修正済みの原文から下書きを構築します。AIに自由記述で病名や薬剤・用量を補わせません。発話IDの欠落・重複・捏造を拒否し、医師以外の発話をO/A/Pへ分類した場合も拒否します。話者不明は要確認へ残します。
+
+引用・IDの一致は医学的な正しさや分類の正しさを保証しません。これは医療者向けの記録補助で、診断・治療の意思決定、緊急性判定、自動カルテ確定には使用できません。薬剤名・数値・否定表現の表示は確認を促すキーワード検出であり、すべての誤りを検出する機能ではありません。
+
+## 制限・データ
+
+- 1回15分・32MB、発話200件・合計12,000文字まで。長い診察は分割。
+- 音声はブラウザのメモリで保持。音声認識時のみ送信し、サーバーのtmpfs一時ファイルは処理後に削除。
+- 文字起こし・下書きのDB保存とブラウザ永続保存はなし。消去・ログアウト・画面再読み込みで破棄。
+- コピー先・PDF・既に開いた印刷用画面の内容は手元に残ります。
+- キャンセルや画面消去で送信済みのサーバー処理が直ちに停止するとは限りません。処理後に一時ファイルを削除します。
+- モデルの重みは名前付きDockerボリュームに保存し、音声はそのボリュームに保存しません。
+- **LLM-JP APIには会話本文が送られます。** APIの `LOG_PROMPT_BODY` と `output_body`、各ゲートウェイ・監視サービスの保存設定を実データ利用前に運用者が確認してください。このアプリの非保存は既存APIのログ停止を意味しません。
+- 匿名の架空会話・同意済みテスト音声で検証してから運用を判断してください。
+
+## 開発テスト
 
 ```bash
 npm ci
 npm test
+python -m venv .venv
+.venv/bin/pip install fastapi httpx PyJWT
+.venv/bin/python -m unittest discover -s tests -p 'test_*.py' -v
 ```
 
-Node.jsはテスト用です。配信中のEC2でNode.jsを常駐させる必要はありません。
-DOMテストにはモックを利用します。実際のAPI・DB・PDF印刷は別途確認してください。
+テストに実録音・患者データは使いません。音声モデル・LLM・録音機器はモックであり、実際の認識精度や性能、医療的妥当性は未検証です。
 
-`tests/fixtures/questionnaires.json` はテスト専用の質問セットです。
-本番の質問セットはAPIが管理するため、Webリポジトリ側のfixture編集では変更されません。
+## 配置
 
-## 出典
+[deepstationとEC2への配置手順](docs/deploy.md)を参照してください。
 
-Web画面とテストは `higenobu/llm-jp` のコミット
-`54c552374d62e1b9a060fe3b8f3dcef015ffffcd`、Apacheルーティングは同リポジトリの
-`9041c956e767e1c145adc7438e3044bdc4a1d204` から分離しました。
-APIのPythonコード・モデル・DB・秘密設定・元リポジトリのGit履歴は移行対象に含めません。
-本番サーバー上で確認したHTTP振り分け、443番Listen、証明書更新フックを配置手順に追記しています。
+参考:
+- https://github.com/SYSTRAN/faster-whisper
+- https://developer.mozilla.org/en-US/docs/Web/API/MediaRecorder
+- https://www.ncbi.nlm.nih.gov/books/NBK482263/

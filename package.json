@@ -1,15 +1,8 @@
 {
-  "name": "llm-jp-web",
-  "version": "1.0.0",
+  "name": "soap-note-assistant",
+  "version": "0.1.0",
   "private": true,
-  "description": "Browser clients and EC2 Apache deployment for LLM-JP",
-  "scripts": {
-    "test": "node scripts/test.cjs"
-  },
-  "engines": {
-    "node": ">=20.19.0"
-  },
-  "devDependencies": {
-    "jsdom": "26.1.0"
-  }
+  "scripts": {"test": "node --test tests/*.cjs"},
+  "engines": {"node": ">=20.19.0"},
+  "devDependencies": {"jsdom": "26.1.0"}
 }
