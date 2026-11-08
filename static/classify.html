@@ -6,9 +6,15 @@
 :root{font-family:system-ui,sans-serif;color:#172c39;background:#f2f5f7;line-height:1.7}*{box-sizing:border-box}body{margin:0}main{max-width:960px;margin:40px auto;padding:0 20px}header{margin-bottom:24px}h1{font-size:28px;margin:0}h2{font-size:18px;margin:0 0 12px}.eyebrow{font-size:12px;letter-spacing:.12em;color:#346b68;font-weight:700}.sub,small{color:#536775}.card{background:white;border:1px solid #dbe4e9;border-radius:14px;padding:24px;margin:18px 0}label{display:block;font-weight:600;margin:12px 0 6px}input,textarea,button{font:inherit}input,textarea{width:100%;border:1px solid #bacbd4;border-radius:7px;padding:10px}textarea{resize:vertical}button{border:0;border-radius:7px;padding:10px 18px;cursor:pointer;background:#17675f;color:white;font-weight:600}button.secondary{background:#eaf0f3;color:#294553}button:disabled{opacity:.5;cursor:wait}.row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}.row>div{flex:1;min-width:200px}.actions{margin-top:16px}.notice{background:#fff7df;border-left:4px solid #d7a43d;padding:12px 16px;border-radius:4px;font-size:14px}.status{min-height:28px;margin-top:12px;white-space:pre-wrap}.error{color:#ae2525}.badge{display:inline-block;font-size:22px;font-weight:700;padding:6px 16px;border-radius:8px;background:#fff0d5}.badge[data-kind="社外秘"]{background:#ffe5e5;color:#9c2323}.badge[data-kind="公開可"]{background:#e2f4ed;color:#19634a}blockquote{border-left:3px solid #9bbab6;margin:8px 0 16px;padding:8px 14px;background:#f5f8f9;white-space:pre-wrap;overflow-wrap:anywhere}li{margin:8px 0}summary{cursor:pointer;font-weight:600}a{color:#17675f}#result[hidden]{display:none}footer{font-size:13px;color:#536775;margin:24px 0}button:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px solid #71aaa2;outline-offset:2px}
 </style></head>
 <body><main>
-<header><div class="eyebrow">LLM-JP / DOCUMENT REVIEW</div><h1>文書の機密判定</h1><p class="sub">本文を貼り付けて、機密区分・理由・根拠を確認します。</p><a href="/llmjp">LLM-JPクライアントへ</a></header>
+<header><div class="eyebrow">LLM-JP / DOCUMENT REVIEW</div><h1>文書の機密判定</h1><p class="sub">本文を貼り付けて、機密区分・理由・根拠を確認します。</p><a href="/llmjp">LLM-JPクライアントへ</a> · <a id="modeLink" href="/llmjp/classify?agent=1">チャットでPDFを判定</a></header>
 <div class="notice">AIによる一次判定です。社外共有の最終判断は責任者が行ってください。入力本文・判定結果は、既存APIのログ設定によりDBに保存される場合があります。</div>
 <section class="card"><h2>1. ログイン</h2><form id="loginForm"><div class="row"><div><label for="username">ユーザー名</label><input id="username" autocomplete="username" required></div><div><label for="password">パスワード</label><input id="password" type="password" autocomplete="current-password" required></div></div><div class="row actions"><button id="loginBtn">ログイン</button><button id="logoutBtn" class="secondary" type="button">ログアウト・本文を消去</button></div></form><div id="authStatus" class="status" role="status">ログインしてください。</div></section>
+<section id="agentChat" class="card" hidden aria-labelledby="agentTitle">
+<h2 id="agentTitle">社外秘判定エージェント</h2>
+<p><strong>あなた</strong>：添付したPDFを社外に出せるか確認して。</p>
+<p id="agentProgress" role="status">PDFを選択して、判定を依頼してください。</p>
+<div class="row actions"><button id="agentBtn" type="button" disabled>PDFを添付して判定を依頼</button></div>
+</section>
 <section class="card"><h2>2. 判定する文書</h2><label for="pdfFile">PDFから本文を取り込む</label><input id="pdfFile" type="file" accept=".pdf,application/pdf"><button id="pdfBtn" type="button" disabled>PDFの本文を読み込む</button><div id="pdfStatus" class="status" role="status"></div><small>10MB・50ページ・抽出本文12,000文字以内。文字を含むPDFと画像PDFに対応。文字を抽出できないページはサーバー内で日本語・英語OCRを実行します（最大10ページ）。パスワード付きは未対応です。OCRの誤読や、文字と画像が混在するページの画像内文字の取りこぼしに注意してください。読み込みに成功すると本文を置き換えます。抽出後に内容を確認してください。PDF原本は保存しません。</small><label for="document">本文</label><textarea id="document" rows="12" maxlength="12000" placeholder="判定したい文書の本文を貼り付けてください。"></textarea><small><span id="count">0</span> / 12,000文字。長い文書は分けて判定してください。</small>
 <details style="margin-top:18px"><summary>判定基準を確認・編集</summary><label for="policy">社内の基準</label><textarea id="policy" rows="8" maxlength="4000">公開可：公開済みであることが本文から確認でき、機密情報・個人情報を含まない情報。
 社内限定：社内の通常業務・手順など、社外公開の承認が確認できない内部情報。
@@ -24,10 +30,24 @@
 "use strict";
 const $ = id => document.getElementById(id);
 let token = "", version = 0, busy = false, controller = null;
-function status(id, text, error=false) { $(id).textContent=text; $(id).className="status"+(error?" error":""); }
-function controls() { $("judgeBtn").disabled=!token||busy; $("pdfBtn").disabled=!token||busy; $("pdfFile").disabled=busy; $("document").readOnly=busy; }
+let singlePdfPage = false;
+const agentMode = new URLSearchParams(location.search).get("agent") === "1";
+if (agentMode) {
+  $("agentChat").hidden = false;
+  $("modeLink").href = "/llmjp/classify";
+  $("modeLink").textContent = "通常の判定画面へ";
+}
+function status(id, text, error=false) {
+  $(id).textContent=text; $(id).className="status"+(error?" error":"");
+  if (agentMode && text && (id === "pdfStatus" || id === "status")) {
+    $("agentProgress").textContent = "エージェント：" + text;
+  }
+}
+function controls() { $("agentBtn").disabled=!token||busy; $("judgeBtn").disabled=!token||busy; $("pdfBtn").disabled=!token||busy; $("pdfFile").disabled=busy; $("document").readOnly=busy; }
 function reset() {
   version++; if(controller) controller.abort(); controller=null; busy=false;
+  singlePdfPage=false;
+  $("agentProgress").textContent="PDFを選択して、判定を依頼してください。";
   $("document").value=""; $("count").textContent="0"; $("pdfFile").value=""; status("pdfStatus","");
   $("result").hidden=true;
   for(const id of ["classification","summary","reasons","evidence","uncertainties","action","timing"]) $(id).replaceChildren();
@@ -53,7 +73,7 @@ $("loginForm").addEventListener("submit",async e=>{
 });
 $("logoutBtn").addEventListener("click",()=>{token="";reset();$("password").value="";status("authStatus","ログアウトしました。");});
 $("clearBtn").addEventListener("click",reset);
-$("document").addEventListener("input",()=>{$("count").textContent=$("document").value.length;});
+$("document").addEventListener("input",()=>{singlePdfPage=false;$("count").textContent=$("document").value.length;});
 function sourceExcerpt(documentText, excerpt) {
   if(documentText.includes(excerpt))return excerpt;
   // Collapse whitespace, but never join Latin words or digits.
@@ -95,7 +115,7 @@ function parseJudgment(text, documentText) {
   if(data.classification!=="要確認"&&!data.evidence.length)throw new Error("判定を裏付ける本文の引用がありません。");
   return data;
 }
- $("pdfBtn").addEventListener("click",async()=>{
+async function extractPdf(autoJudge=false) {
   const file=$("pdfFile").files[0];
   if(!token||busy)return;
   if(!file)return status("pdfStatus","PDFファイルを選択してください。",true);
@@ -111,13 +131,20 @@ function parseJudgment(text, documentText) {
     if(current!==version)return;
     if(typeof data.text!=="string"||!data.text.trim()||data.text.length>12000)
       throw new Error("抽出本文を確認できませんでした。");
-    $("document").value=data.text;$("count").textContent=data.text.length;
-    status("pdfStatus",file.name+"（"+data.pages+"ページ"+(data.ocr_pages?.length?"、OCR: "+data.ocr_pages.join(", ")+"ページ":"")+"）を読み込みました。本文を確認して「判定する」を押してください。図表や文字の読み順も確認してください。");
+    $("document").value=data.text;
+    $("count").textContent=data.text.length;
+    singlePdfPage=data.pages===1;
+    status("pdfStatus",file.name+"（"+data.pages+"ページ"+(data.ocr_pages?.length?"、OCR: "+data.ocr_pages.join(", ")+"ページ":"")+"）を読み込みました。"+(autoJudge?"続けて判定します。":"本文を確認して「判定する」を押してください。")+"図表や文字の読み順も確認してください。");
+    return true;
   }catch(e){
     if(current===version&&e.name!=="AbortError")status("pdfStatus",e.message+" 以前の本文は変更していません。",true);
   }finally{
     if(current===version){busy=false;controller=null;controls();}
   }
+}
+$("pdfBtn").addEventListener("click",()=>extractPdf());
+$("agentBtn").addEventListener("click",async()=>{
+  if(await extractPdf(true)) $("judgeBtn").click();
 });
 function list(id, items) {
   $(id).replaceChildren(); for(const text of items){const li=document.createElement("li");li.textContent=text;$(id).append(li);}
@@ -126,7 +153,7 @@ function display(data, elapsed) {
   $("classification").textContent=data.classification;$("classification").dataset.kind=data.classification;
   $("summary").textContent=data.summary;list("reasons",data.reasons);list("uncertainties",data.uncertainties.length?data.uncertainties:["モデルからの追加指摘なし。公開を保証するものではありません。"]);
   $("evidence").replaceChildren();
-  for(const item of data.evidence){const quote=document.createElement("blockquote"),reason=document.createElement("p");quote.textContent=item.excerpt;reason.textContent=item.reason;$("evidence").append(quote,reason);}
+  for(const item of data.evidence){const quote=document.createElement("blockquote"),reason=document.createElement("p");quote.textContent=item.excerpt;reason.textContent=(agentMode&&singlePdfPage?"PDF 1ページ：":"")+item.reason;$("evidence").append(quote,reason);}
   if(!data.evidence.length)$("evidence").textContent="特定できませんでした。責任者による確認が必要です。";
   $("action").textContent=data.recommended_action;$("timing").textContent="処理時間: "+elapsed.toFixed(1)+"秒";$("result").hidden=false;
 }
@@ -154,4 +181,3 @@ $("judgeBtn").addEventListener("click",async()=>{
   }catch(e){if(current===version&&e.name!=="AbortError")status("status",e.message,true);}finally{if(current===version){busy=false;controller=null;controls();}}
 });
 </script></body></html>
-
