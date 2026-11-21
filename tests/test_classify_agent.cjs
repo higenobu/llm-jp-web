@@ -4,7 +4,7 @@ const { JSDOM } = require("jsdom");
 
 const html = fs.readFileSync("static/classify.html", "utf8");
 
-async function review({ pages, excerpt, pdfError = false }) {
+async function review({ pages, id, pdfError = false }) {
   const calls = [];
   const dom = new JSDOM(html, {
     runScripts: "dangerously",
@@ -25,7 +25,7 @@ async function review({ pages, excerpt, pdfError = false }) {
           classification: "社外秘",
           summary: "未公開の計画",
           reasons: ["非公開"],
-          evidence: [{ excerpt, reason: "根拠" }],
+          evidence: [{ id, reason: "根拠" }],
           uncertainties: [],
           recommended_action: "責任者が確認",
         });
@@ -48,10 +48,10 @@ async function review({ pages, excerpt, pdfError = false }) {
     await new Promise(setImmediate);
     assert.deepEqual(calls, ["/llmjp/auth/login", "/llmjp/pdf-text",
       ...(pdfError ? [] : ["/llmjp/generate"])]);
-    const valid = !pdfError && excerpt === "未公開の計画";
+    const valid = !pdfError && id === 1;
     assert.equal(get("result").hidden, !valid);
     if (valid) {
-      assert.equal(get("evidence").querySelector("blockquote").textContent, excerpt);
+      assert.equal(get("evidence").querySelector("blockquote").textContent, "未公開の計画です。");
       assert.equal(get("evidence").textContent.includes("PDF 1ページ"), pages === 1);
     }
     get("logoutBtn").click();
@@ -63,11 +63,11 @@ async function review({ pages, excerpt, pdfError = false }) {
 }
 
 (async () => {
-  await review({ pages: 1, excerpt: "未公開の計画" });
-  await review({ pages: 2, excerpt: "未公開の計画" });
-  await review({ pages: 1, excerpt: "本文にない引用" });
+  await review({ pages: 1, id: 1 });
+  await review({ pages: 2, id: 1 });
+  await review({ pages: 1, id: 99 });
   await review({ pages: 1, pdfError: true });
-  console.log("Agent workflow: extraction, page attribution, quote validation and logout passed");
+  console.log("Agent workflow: extraction, page attribution, evidence ID validation and logout passed");
 })().catch(error => {
   console.error(error);
   process.exitCode = 1;
