@@ -79,10 +79,41 @@ function numberEvidence(documentText) {
   return passages.map(text => text.trim()).filter(Boolean)
     .map((text, index) => ({ id: index + 1, text }));
 }
+function readJudgmentObject(text) {
+  const trimmed = text.trim();
+  const openingFence = trimmed.match(/^```(?:json)?\s*/i);
+  const source = openingFence ? trimmed.slice(openingFence[0].length) : trimmed;
+  if (!source.startsWith("{")) throw new Error("応答がJSONオブジェクトで始まっていません。");
+
+  let depth = 0;
+  let quoted = false;
+  let escaped = false;
+  for (let i = 0; i < source.length; i++) {
+    const char = source[i];
+    if (quoted) {
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === '"') quoted = false;
+    } else if (char === '"') quoted = true;
+    else if (char === "{") depth++;
+    else if (char === "}" && --depth === 0) {
+      let suffix = source.slice(i + 1).trim();
+      if (openingFence && suffix.startsWith("```")) suffix = suffix.slice(3).trim();
+      // Accept only plain prose after a complete object. Structured or ambiguous suffixes fail closed.
+      if (suffix && (!/^\p{L}[^{}\[\]`<>"]*$/u.test(suffix) || /^(?:true|false|null)(?:\s|$)/.test(suffix))) {
+        throw new Error("JSONの後に別の判定や解釈できない出力があります。");
+      }
+      try {
+        return {data: JSON.parse(source.slice(0, i + 1)), ignoredSuffix: Boolean(suffix)};
+      } catch {
+        throw new Error("応答のJSON形式が不正です。");
+      }
+    }
+  }
+  throw new Error("応答のJSONが途中で終わっています。");
+}
 function parseJudgment(text, passages) {
-  let source=text.trim();
-  if(source.startsWith("```"))source=source.replace(/^```(?:json)?\s*/i,"").replace(/\s*```\s*$/,"");
-  const data=JSON.parse(source);
+  const {data, ignoredSuffix}=readJudgmentObject(text);
   const kinds=["公開可","社内限定","社外秘","要確認"];
   if(!data||typeof data!=="object"||!kinds.includes(data.classification))throw new Error("分類が指定の形式ではありません。");
   for(const key of ["summary","recommended_action"])if(typeof data[key]!=="string"||!data[key].trim())throw new Error(key+"がありません。");
@@ -97,7 +128,7 @@ function parseJudgment(text, passages) {
   });
   data.reasons=data.evidence.map(item=>item.reason);
   if(data.classification!=="要確認"&&!data.evidence.length)throw new Error("判定を裏付ける本文の引用がありません。");
-  return data;
+  return {judgment: data, ignoredSuffix};
 }
 async function verifyJudgment(judgment, policy, maxTokens, signal) {
   const checks=judgment.evidence.map((item,index)=>({id:index+1,excerpt:item.excerpt,claim:item.reason}));
@@ -195,8 +226,8 @@ $("judgeBtn").addEventListener("click",async()=>{
     if(current!==version)return;
     // Only parse the final answer; reasoning or an incomplete response is not a judgment.
     if(typeof data.answer!=="string"||!data.answer.trim())throw new Error("最終回答がありません。生成上限を増やして再試行してください。");
-    let judgment;try{judgment=parseJudgment(data.answer,passages);}catch(e){throw new Error("判定結果を検証できませんでした（要確認）。"+e.message+" 再試行するか、責任者が確認してください。");}
-    const first=judgment;
+    let parsed;try{parsed=parseJudgment(data.answer,passages);}catch(e){throw new Error("判定結果を検証できませんでした（要確認）。"+e.message+" 再試行するか、責任者が確認してください。");}
+    const first=parsed.judgment;
     let checked=first;
     if(first.classification!=="要確認"){
       status("status","判定理由を原文と照合しています…");
@@ -206,7 +237,9 @@ $("judgeBtn").addEventListener("click",async()=>{
       if(current!==version)return;
       checked=reviewedJudgment(first,review);
     }
-    display(checked,(performance.now()-started)/1000);status("status","判定が完了しました。社外共有前に結果を確認してください。");
+    display(checked,(performance.now()-started)/1000);
+    const note=parsed.ignoredSuffix?"モデルがJSONの後に付けた説明文は表示から除きました。":"";
+    status("status","判定が完了しました。"+note+"社外共有前に結果を確認してください。");
   }catch(e){if(current===version&&e.name!=="AbortError")status("status",e.message,true);}finally{if(current===version){busy=false;controller=null;controls();}}
 });
 </script></body></html>
