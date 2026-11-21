@@ -4,7 +4,7 @@ const { JSDOM } = require("jsdom");
 
 const html = fs.readFileSync("static/classify.html", "utf8");
 
-async function review({ pages, id, pdfError = false }) {
+async function review({ pages, id, unsupported = false, pdfError = false }) {
   const calls = [];
   const dom = new JSDOM(html, {
     runScripts: "dangerously",
@@ -20,11 +20,19 @@ async function review({ pages, id, pdfError = false }) {
           if (pdfError) return { ok: false, status: 422, json: async () => ({ detail: "Invalid PDF" }) };
           return { ok: true, json: async () => ({ text: "未公開の計画です。", pages, ocr_pages: [1] }) };
         }
-        assert.match(JSON.parse(options.body).prompt, /未公開の計画です/);
+        const { prompt } = JSON.parse(options.body);
+        assert.match(prompt, /未公開の計画です/);
+        if (prompt.includes("根拠の検証担当")) {
+          const status = unsupported ? "unsupported" : "supported";
+          const answer = JSON.stringify({
+            checks: [{ id: 1, status, note: "根拠の確認結果" }],
+            overall: { status, note: "区分の確認結果" },
+          });
+          return { ok: true, json: async () => ({ answer }) };
+        }
         const answer = JSON.stringify({
           classification: "社外秘",
           summary: "未公開の計画",
-          reasons: ["非公開"],
           evidence: [{ id, reason: "根拠" }],
           uncertainties: [],
           recommended_action: "責任者が確認",
@@ -47,10 +55,11 @@ async function review({ pages, id, pdfError = false }) {
     get("agentBtn").click();
     await new Promise(setImmediate);
     assert.deepEqual(calls, ["/llmjp/auth/login", "/llmjp/pdf-text",
-      ...(pdfError ? [] : ["/llmjp/generate"])]);
+      ...(pdfError ? [] : ["/llmjp/generate", ...(id === 1 ? ["/llmjp/generate"] : [])])]);
     const valid = !pdfError && id === 1;
     assert.equal(get("result").hidden, !valid);
     if (valid) {
+      assert.equal(get("classification").textContent, unsupported ? "要確認" : "社外秘");
       assert.equal(get("evidence").querySelector("blockquote").textContent, "未公開の計画です。");
       assert.equal(get("evidence").textContent.includes("PDF 1ページ"), pages === 1);
     }
@@ -65,6 +74,7 @@ async function review({ pages, id, pdfError = false }) {
 (async () => {
   await review({ pages: 1, id: 1 });
   await review({ pages: 2, id: 1 });
+  await review({ pages: 1, id: 1, unsupported: true });
   await review({ pages: 1, id: 99 });
   await review({ pages: 1, pdfError: true });
   console.log("Agent workflow: extraction, page attribution, evidence ID validation and logout passed");
